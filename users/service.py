@@ -1,6 +1,7 @@
 from typing import Callable, Tuple, List
 from dataclasses import fields
 from datetime import datetime, timezone
+from os import environ
 
 from .models import User
 from database.database import (
@@ -13,7 +14,8 @@ from database.database import (
     order_by_constraint,
 )
 
-__table: str = 'users'
+def table_name():
+    return 'test_users' if bool(environ.get('TEST', 'False')) else 'users'
 
 class DuplicateID(Exception):
     pass
@@ -28,7 +30,7 @@ def __get_users_fields() -> List[str]:
 
 def get_users() -> List[User]:
     user_fields: List[str] = __get_users_fields()
-    from_users_table: Callable = from_table(__table)
+    from_users_table: Callable = from_table(table_name())
     where_is_not_deleted: Callable = where_constraint([f'deleted_at IS NULL'])
     order_by_created_at_desc: Callable = order_by_constraint([('created_at', 'DESC')])
     select_all_users_query: str = order_by_created_at_desc(
@@ -48,7 +50,7 @@ def get_users() -> List[User]:
 
 def get_user_by_id(id: int) -> User:
     user_fields: List[str] = __get_users_fields()
-    from_users_table: Callable = from_table(__table)
+    from_users_table: Callable = from_table(table_name())
     where_id_equals: Callable = where_constraint([f'id = {id}'])
     select_user_by_id: str = where_id_equals(from_users_table(select_query(user_fields)))
 
@@ -62,7 +64,7 @@ def get_user_by_id(id: int) -> User:
     return User(*query_result[0])
 
 def insert_user(user: User) -> User:
-    insert_into_users: Callable = insert_into_table(__table)
+    insert_into_users: Callable = insert_into_table(table_name())
     insert_user_query: str = insert_into_users(user.insert_dict())
     result = query(insert_user_query)
     if result and len(result) == 1:
@@ -83,7 +85,7 @@ def update_user(user: User) -> User:
         if value != og_user_dict[key]:
             update[key] = value
 
-    update_table_users: Callable = update_table(__table)
+    update_table_users: Callable = update_table(table_name())
     update_user: Callable = update_table_users(user.id)
     update_user_query: str = update_user(update)
     result = query(update_user_query)
@@ -102,55 +104,21 @@ def delete_user(user_id: int) -> None:
 
 if __name__ == '__main__':
 
-    __table = 'test_users'
-
     import os
     from copy import deepcopy
-    def __test(func):
-        def __decorator():
+    from .test_decorators import test_create_data, test_delete_data
 
-            def get_query(filename: str) -> str:
-                query: str 
-                with open(filename, 'r') as file:
-                    query = file.read().replace('\n', '')
-                return query
-
-            cwd: str = os.getcwd()
-
-            insert_query: str = get_query(f'{cwd}/users/test_users.sql')
-            delete_query: str = get_query(f'{cwd}/users/delete_test_users.sql')
-            create_table_query: str = get_query(f'{cwd}/users/create_test_table.sql')
-
-            from database.database import (
-                connect,
-                default_config,
-            )
+    os.environ['TEST'] = 'True'
 
 
-            connection = connect(default_config)
-            cursor = connection.cursor()
-
-            cursor.execute(create_table_query)
-            connection.commit()
-
-            cursor.execute(insert_query)
-            connection.commit()
-
-            try:
-                func()
-            finally:
-                cursor = connection.cursor()
-                cursor.execute(delete_query)
-                connection.commit()
-        return __decorator
-
-
-    @__test
+    @test_create_data
+    @test_delete_data
     def _test_get_users():
         users: List[User] = get_users()
         assert(len(users) >= 6)
 
-    @__test
+    @test_create_data
+    @test_delete_data
     def _test_get_user_by_id():
         users: List[User] = get_users()
         user_id = users[0].id
@@ -163,7 +131,8 @@ if __name__ == '__main__':
         assert(user_1.id == user_id)
         assert(user_2.id == user_id_2)
 
-    @__test
+    @test_create_data
+    @test_delete_data
     def _test_insert_user():
         user: User = User(fullname='test_insert', email='test_insert@insert.com', phone_number='3333333333')
         inserted_user = insert_user(user)
@@ -173,7 +142,8 @@ if __name__ == '__main__':
         found_user = get_user_by_id(new_id)
         assert(found_user.fullname == user.fullname)
 
-    @__test
+    @test_create_data
+    @test_delete_data
     def _test_update_user():
         users: List[User] = get_users()
         og_user: User = users[0]
@@ -183,7 +153,8 @@ if __name__ == '__main__':
         assert(updated_user.id == og_user.id == user_to_update.id)
         assert(updated_user.fullname == user_to_update.fullname != og_user.fullname)
 
-    @__test
+    @test_create_data
+    @test_delete_data
     def _test_delete_user():
         users: List[User] = get_users()
         first_user: User = users[0]

@@ -34,7 +34,7 @@ class User:
         
 
 @dataclass
-class UserResponse(BaseModel):
+class UserResponse:
     fullname: str
     id: Union[int, None] = None
     phone_number: Union[str, None] = None
