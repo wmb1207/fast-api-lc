@@ -1,0 +1,10 @@
+CREATE TABLE users (
+	id serial PRIMARY KEY,
+	fullname VARCHAR ( 255 ) NOT NULL,
+	phone_number VARCHAR ( 50 ),
+	email VARCHAR ( 255 ) UNIQUE,
+	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP
+);
+
