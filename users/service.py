@@ -10,6 +10,7 @@ from database.database import (
     select_query,
     update_table,
     query,
+    order_by_constraint,
 )
 
 __table: str = 'users'
@@ -29,7 +30,16 @@ def get_users() -> List[User]:
     user_fields: List[str] = __get_users_fields()
     from_users_table: Callable = from_table(__table)
     where_is_not_deleted: Callable = where_constraint([f'deleted_at IS NULL'])
-    select_all_users_query: str = where_is_not_deleted(from_users_table(select_query(user_fields)))
+    order_by_created_at_desc: Callable = order_by_constraint([('created_at', 'DESC')])
+    select_all_users_query: str = order_by_created_at_desc(
+        where_is_not_deleted(
+            from_users_table(
+                select_query(
+                    user_fields
+                )
+            )
+        )
+    )
     query_result: List[Tuple] = query(select_all_users_query)
 
 

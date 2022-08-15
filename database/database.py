@@ -27,7 +27,6 @@ default_config = Config(
     host=environ.get('DB_HOST', 'postgres'),
 )
 
-
 def connect(config: Config) -> Connection:
     return driver(
         dbname=config.db_name,
@@ -36,8 +35,8 @@ def connect(config: Config) -> Connection:
         host=config.host,
     )
 
-def update_table(table: str) -> Callable:
-    def key(item_id: int) -> Callable:
+def update_table(table: str) -> Callable[[int], Callable[[dict], str]]:
+    def key(item_id: int) -> Callable[[dict], str]:
         def internal(item: dict) -> str:
             values_list: List[str] = [f'{key} = \'{value}\'' if isinstance(value, str)
                             else f'{key} = {value}' for key, value in item.items()]
@@ -46,7 +45,7 @@ def update_table(table: str) -> Callable:
         return internal
     return key
 
-def insert_into_table(table: str) -> Callable:
+def insert_into_table(table: str) -> Callable[[dict], str]:
     def insert(item: dict) -> str:
         keys: str = ', '.join(list(item))
         values: str = ''
@@ -56,7 +55,7 @@ def insert_into_table(table: str) -> Callable:
         return f'INSERT INTO {table}({keys}) VALUES ({values}) RETURNING id'
     return insert
 
-def query_executor(connection: Connection) -> Callable:
+def query_executor(connection: Connection) -> Callable[[str], List[Tuple]]:
     def executor(query: str) -> List[Tuple]:
         cursor: Cursor = connection.cursor()
         cursor.execute(query)
@@ -70,31 +69,20 @@ def query(query: str) -> List[Tuple]:
     connection.commit()
     return result
 
-def order_by_constraint(order_by: List[Tuple]) -> Callable:
-    order_list: List[str] = [f'{order[0]} {order[1]}' for order in order_by]
-    order: str = ', '.join(order_list) + ';'
-    order_query: str = f'ORDER BY {order}'
-
-    def append(query: str) -> str:
-        return query.replace(';', order_query)
-
-    return append
-
 def select_query(field_list: List[str]) -> str:
-    fields: str = ', '.join(field_list)
-    return f'SELECT {fields}'
+    return 'SELECT {}'.format(', '.join(field_list)) 
 
-def where_constraint(constraints: List[str]) -> Callable:
-    where_str: str = 'AND '.join(constraints)
-    where_query: str = f' WHERE {where_str}' # Add a blank space
+def where_constraint(constraints: List[str]) -> Callable[[str], str]:
+    return lambda query: '{query} WHERE {constraints}'.format(
+        query=query,
+        constraints='AND '.join(constraints)
+    )
 
-    def append(query: str) -> str:
-        return f'{query} {where_query}'
+def from_table(table: str) -> Callable[[str], str]:
+    return lambda query: f'{query} FROM {table}'
 
-    return append
-
-def from_table(table: str) -> Callable:
-    def internal(query: str) -> str:
-        return f'{query} FROM {table}'
-    return internal
+def order_by_constraint(order_by: List[Tuple]) -> Callable[[str], str]:
+    order_list: List[str] = [f'{order[0]} {order[1]}' for order in order_by]
+    order: str = 'ORDER BY {}'.format( ', '.join(order_list))
+    return lambda query: f'{query} {order}'
 
