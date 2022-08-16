@@ -1,27 +1,42 @@
-from typing import Callable, Tuple, List
 from dataclasses import fields
 from datetime import datetime, timezone
 from os import environ
+from typing import Callable, List, Tuple
 
-from .models import User
 from database.database import (
-    insert_into_table,
-    where_constraint,
+    AddConstraintToQuery,
+    FromTable,
+    Query,
+    QueryResult,
     from_table,
-    select_query,
-    update_table,
-    query,
+    insert_into,
+    insert_values,
     order_by_constraint,
+    query,
+    select,
+    update_table,
+    update_values,
+    where_constraint,
 )
 
+from .models import User
+
+
 def table_name():
-    return 'test_users' if bool(environ.get('TEST', 'False')) else 'users'
+    return "test_users" if bool(environ.get("TEST", "False")) else "users"
+
 
 class DuplicateID(Exception):
     pass
 
+
+class DuplicateEmail(Exception):
+    pass
+
+
 class UserNotFound(Exception):
     pass
+
 
 def __get_users_fields() -> List[str]:
     user_fields_tuple: Tuple = fields(User)
@@ -29,71 +44,84 @@ def __get_users_fields() -> List[str]:
 
 
 def get_users() -> List[User]:
-    user_fields: List[str] = __get_users_fields()
     from_users_table: Callable = from_table(table_name())
-    where_is_not_deleted: Callable = where_constraint([f'deleted_at IS NULL'])
-    order_by_created_at_desc: Callable = order_by_constraint([('created_at', 'DESC')])
+    where_is_not_deleted: Callable = where_constraint([f"deleted_at IS NULL"])
+    order_by_created_at_desc: Callable = order_by_constraint([("created_at", "DESC")])
     select_all_users_query: str = order_by_created_at_desc(
-        where_is_not_deleted(
-            from_users_table(
-                select_query(
-                    user_fields
-                )
-            )
-        )
+        where_is_not_deleted(from_users_table(select(__get_users_fields())))
     )
     query_result: List[Tuple] = query(select_all_users_query)
-
 
     users: List[User] = [User(*user) for user in query_result]
     return users
 
+
+def get_user_by_email(email: str) -> User:
+    from_users_table: FromTable = from_table(table_name())
+    where_email_like: AddConstraintToQuery = where_constraint([f"email = '{email}'"])
+    select_user_by_email: Query = where_email_like(
+        from_users_table(select(__get_users_fields()))
+    )
+    query_result: QueryResult = query(select_user_by_email)
+    if not query_result:
+        raise UserNotFound(f"User not found with email {email}")
+
+    if len(query_result) > 1:
+        raise DuplicateEmail(f"More than one user with email {email}")
+
+    return User(*query_result[0])
+
+
 def get_user_by_id(id: int) -> User:
-    user_fields: List[str] = __get_users_fields()
     from_users_table: Callable = from_table(table_name())
-    where_id_equals: Callable = where_constraint([f'id = {id}'])
-    select_user_by_id: str = where_id_equals(from_users_table(select_query(user_fields)))
+    where_id_equals: Callable = where_constraint([f"id = {id}"])
+    select_user_by_id: str = where_id_equals(
+        from_users_table(select(__get_users_fields()))
+    )
 
     query_result: List[Tuple] = query(select_user_by_id)
     if not query_result:
-        raise  UserNotFound(f'User not found with id {id}')
+        raise UserNotFound(f"User not found with id {id}")
 
     if len(query_result) > 1:
-        raise DuplicateID(f'More than one user with id {id}')
-    
+        raise DuplicateID(f"More than one user with id {id}")
+
     return User(*query_result[0])
 
+
 def insert_user(user: User) -> User:
-    insert_into_users: Callable = insert_into_table(table_name())
-    insert_user_query: str = insert_into_users(user.insert_dict())
+    insert_into_users: Callable = insert_into(table_name())
+    insert_user_query: str = insert_into_users(insert_values(user.insert_dict()))
     result = query(insert_user_query)
     if result and len(result) == 1:
-        user.id = result[0][0] # First element of the list of tuples
+        user.id = result[0][0]  # First element of the list of tuples
         return user
 
-    raise Exception('Unexpected issue creating a user')
+    raise Exception("Unexpected issue creating a user")
+
 
 def update_user(user: User) -> User:
     if user.id is None:
-        raise Exception('No id in update request')
+        raise Exception("No id in update request")
 
     user.updated_at = str(datetime.now(timezone.utc))
     og_user_dict: dict = get_user_by_id(user.id).update_dict()
-    update: dict = {}
-
-    for key, value in user.update_dict().items():
-        if value != og_user_dict[key]:
-            update[key] = value
-
+    update: dict = {
+        key: value
+        for key, value in user.update_dict().items()
+        if value != og_user_dict[key]
+    }
     update_table_users: Callable = update_table(table_name())
     update_user: Callable = update_table_users(user.id)
-    update_user_query: str = update_user(update)
+    update_user_values = update_values(update)
+    update_user_query: str = update_user(update_user_values)
     result = query(update_user_query)
     if result and len(result) == 1:
         user.id = result[0][0]
         return user
 
-    raise Exception(f'Unexpected issue while updating the user: {user.id}')
+    raise Exception(f"Unexpected issue while updating the user: {user.id}")
+
 
 def delete_user(user_id: int) -> None:
     user: User = get_user_by_id(user_id)
@@ -102,59 +130,63 @@ def delete_user(user_id: int) -> None:
     return
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     import os
     from copy import deepcopy
-    from .test_decorators import test_create_data, test_delete_data
 
-    os.environ['TEST'] = 'True'
+    from utils.test_server import test_create_data, test_delete_data
 
+    os.environ["TEST"] = "True"
 
-    @test_create_data
-    @test_delete_data
+    @test_create_data("users")
+    @test_delete_data("users")
     def _test_get_users():
         users: List[User] = get_users()
-        assert(len(users) >= 6)
+        assert len(users) >= 6
 
-    @test_create_data
-    @test_delete_data
+    @test_create_data("users")
+    @test_delete_data("users")
     def _test_get_user_by_id():
         users: List[User] = get_users()
         user_id = users[0].id
         user_id_2 = users[1].id
         if user_id is None or user_id_2 is None:
-            raise Exception('User not found')
+            raise Exception("User not found")
 
         user_1 = get_user_by_id(user_id)
         user_2 = get_user_by_id(user_id_2)
-        assert(user_1.id == user_id)
-        assert(user_2.id == user_id_2)
+        assert user_1.id == user_id
+        assert user_2.id == user_id_2
 
-    @test_create_data
-    @test_delete_data
+    @test_create_data("users")
+    @test_delete_data("users")
     def _test_insert_user():
-        user: User = User(fullname='test_insert', email='test_insert@insert.com', phone_number='3333333333')
+        user: User = User(
+            fullname="test_insert",
+            email="test_insert@insert.com",
+            phone_number="3333333333",
+        )
         inserted_user = insert_user(user)
-        assert(inserted_user.id is not None)
+        assert inserted_user.id is not None
 
         new_id = inserted_user.id
         found_user = get_user_by_id(new_id)
-        assert(found_user.fullname == user.fullname)
+        assert found_user.fullname == user.fullname
 
-    @test_create_data
-    @test_delete_data
+    @test_create_data("users")
+    @test_delete_data("users")
     def _test_update_user():
         users: List[User] = get_users()
         og_user: User = users[0]
         user_to_update: User = deepcopy(og_user)
-        user_to_update.fullname = 'test_updated_user'
+        user_to_update.fullname = "test_updated_user"
         updated_user: User = update_user(user_to_update)
-        assert(updated_user.id == og_user.id == user_to_update.id)
-        assert(updated_user.fullname == user_to_update.fullname != og_user.fullname)
+        assert updated_user.id == og_user.id == user_to_update.id
+        assert updated_user.fullname == user_to_update.fullname != og_user.fullname
 
-    @test_create_data
-    @test_delete_data
+    @test_create_data("users")
+    @test_delete_data("users")
     def _test_delete_user():
         users: List[User] = get_users()
         first_user: User = users[0]
@@ -166,10 +198,20 @@ if __name__ == '__main__':
         delete_user(second_user.id)
 
         users_after_delete: List[User] = get_users()
-        assert((len(users) - len(users_after_delete)) == 2)
+        assert (len(users) - len(users_after_delete)) == 2
+
+    @test_create_data("users")
+    @test_delete_data("users")
+    def _test_get_user_by_email():
+        users: List[User] = get_users()
+        user: User = users[0]
+        user_by_email: User = get_user_by_email(user.email)
+        assert user.id == user_by_email.id
+        assert user.email == user_by_email.email
 
     _test_get_users()
     _test_get_user_by_id()
     _test_insert_user()
     _test_update_user()
     _test_delete_user()
+    _test_get_user_by_email()

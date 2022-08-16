@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
+import os
+import sys
 from typing import List
 
-import os, sys; sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from database.database import (
-    connect,
-    default_config,
-)
+from database.database import connect, default_config
 
-to_migrate: List = [
-    'users'
-]
+to_migrate: List = ["users"]
+
 
 def to_query_str(model: str) -> str:
     query: str
-    with open(f'./{model}/{model}.sql', 'r') as file:
-        query = file.read().replace('\n', '')
+    with open(f"./{model}/{model}.sql", "r") as file:
+        query = file.read().replace("\n", "")
     return query
+
 
 def create_table():
     connection = connect(default_config)
@@ -25,8 +24,10 @@ def create_table():
         cursor.execute(to_query_str(model))
     connection.commit()
 
+
 def migrate():
     pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     create_table()
